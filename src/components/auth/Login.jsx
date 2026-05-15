@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../shared/Button';
 import Input from '../shared/Input';
@@ -11,8 +11,10 @@ const Login = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [userType, setUserType] = useState('patient');
   const [error, setError] = useState('');
+  const location = useLocation();
   const { login, isLoading, authError, clearError } = useAuth();
   const navigate = useNavigate();
+  const successMessage = location.state?.message || '';
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -35,6 +37,7 @@ const Login = () => {
         </div>
         <h2>Welcome Back!</h2>
         <p className="auth-subtitle">Login to your account</p>
+        {successMessage && <div className="alert alert-success">{successMessage}</div>}
         {(error || authError) && <div className="alert alert-error">{error || authError}</div>}
 
         <div className="user-type-toggle">

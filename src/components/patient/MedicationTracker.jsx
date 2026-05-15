@@ -2,6 +2,20 @@ import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import Alert from '../shared/Alert';
 
+const normalizeDoseStatus = (status) => {
+  const normalized = String(status || 'pending').toLowerCase();
+
+  if (normalized === 'completed' || normalized === 'taken') {
+    return 'taken';
+  }
+
+  if (normalized === 'skipped') {
+    return 'skipped';
+  }
+
+  return 'pending';
+};
+
 const MedicationTracker = () => {
   const { medications, alerts, takeAlertDose, logDose } = useApp();
   const [notice, setNotice] = useState('');
@@ -67,8 +81,8 @@ const MedicationTracker = () => {
                     return alertTime === time;
                   });
 
-                  const status = matchingAlert?.status || 'pending';
-                  const isDone = status === 'completed';
+                  const status = normalizeDoseStatus(matchingAlert?.status);
+                  const isDone = status === 'taken';
                   const isSkipped = status === 'skipped';
 
                   return (

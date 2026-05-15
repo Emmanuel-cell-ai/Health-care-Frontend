@@ -6,6 +6,34 @@ import MedicationLogs from './MedicationLogs';
 import MedicationTracker from './MedicationTracker';
 import Layout from '../shared/Layout';
 
+const normalizeDoseStatus = (status) => {
+  const normalized = String(status || 'pending').toLowerCase();
+
+  if (normalized === 'completed' || normalized === 'taken') {
+    return 'taken';
+  }
+
+  if (normalized === 'skipped') {
+    return 'skipped';
+  }
+
+  return 'pending';
+};
+
+const getTimeKey = (value) => {
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const getMedicationScheduleCountForDay = (medication, dayKey) => {
+  const startDate = String(medication.startDate || '').slice(0, 10);
+  if (startDate && startDate > dayKey) {
+    return 0;
+  }
+
+  return medication.scheduleTimes?.length || 0;
+};
+
 const PatientDashboard = () => {
   const [activeTab, setActiveTab] = useState('today');
   const { medications, alerts, logs, isLoading, appError } = useApp();
@@ -18,14 +46,52 @@ const PatientDashboard = () => {
     [alerts, today],
   );
 
-  const adherenceRate = todayAlerts.length
-    ? Math.round((todayAlerts.filter((alert) => alert.status === 'completed').length / todayAlerts.length) * 100)
-    : 0;
-
-  const skippedToday = todayAlerts.filter((alert) => alert.status === 'skipped').length;
-  const completedToday = todayAlerts.filter((alert) => alert.status === 'completed').length;
-  const pendingToday = todayAlerts.filter((alert) => alert.status === 'pending').length;
   const activeMedications = medications.filter((medication) => medication.isActive !== false);
+  const todayDoseStatus = useMemo(() => {
+    const statusByDose = new Map();
+
+    todayAlerts.forEach((alert) => {
+      const medicationId = alert.medication?._id || alert.medication?.id || alert.medication;
+      const timeKey = getTimeKey(alert.scheduledFor);
+      const doseKey = `${medicationId}-${timeKey}`;
+
+      statusByDose.set(doseKey, normalizeDoseStatus(alert.status));
+    });
+
+    let total = 0;
+    let completed = 0;
+    let skipped = 0;
+
+    activeMedications.forEach((medication) => {
+      const medicationId = medication.id || medication._id;
+      const scheduleTimes = medication.scheduleTimes || [];
+
+      scheduleTimes.forEach((time) => {
+        total += 1;
+        const status = statusByDose.get(`${medicationId}-${time}`) || 'pending';
+
+        if (status === 'taken') {
+          completed += 1;
+        } else if (status === 'skipped') {
+          skipped += 1;
+        }
+      });
+    });
+
+    return {
+      total,
+      completed,
+      skipped,
+      pending: Math.max(total - completed - skipped, 0),
+    };
+  }, [activeMedications, todayAlerts]);
+
+  const completedToday = todayDoseStatus.completed;
+  const skippedToday = todayDoseStatus.skipped;
+  const pendingToday = todayDoseStatus.pending;
+  const adherenceRate = todayDoseStatus.total
+    ? Math.round((completedToday / todayDoseStatus.total) * 100)
+    : 0;
 
   const weeklyProgress = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, index) => {
@@ -40,9 +106,24 @@ const PatientDashboard = () => {
 
     return days.map((day) => {
       const dayLogs = logs.filter((log) => String(log.takenAt).slice(0, 10) === day.key);
-      const taken = dayLogs.filter((log) => String(log.status).toLowerCase() === 'taken').length;
-      const skipped = dayLogs.filter((log) => String(log.status).toLowerCase() === 'skipped').length;
-      const total = dayLogs.length;
+      const dayStatuses = new Map();
+
+      dayLogs.forEach((log) => {
+        const doseKey = `${log.medicationId}-${getTimeKey(log.takenAt)}`;
+        const status = normalizeDoseStatus(log.status);
+        const currentStatus = dayStatuses.get(doseKey);
+
+        if (status === 'taken' || !currentStatus) {
+          dayStatuses.set(doseKey, status);
+        }
+      });
+
+      const taken = Array.from(dayStatuses.values()).filter((status) => status === 'taken').length;
+      const skipped = Array.from(dayStatuses.values()).filter((status) => status === 'skipped').length;
+      const total = activeMedications.reduce(
+        (sum, medication) => sum + getMedicationScheduleCountForDay(medication, day.key),
+        0,
+      );
       const completion = total ? Math.round((taken / total) * 100) : 0;
 
       return {
@@ -53,7 +134,7 @@ const PatientDashboard = () => {
         completion,
       };
     });
-  }, [logs]);
+  }, [activeMedications, logs]);
 
   const streak = useMemo(() => {
     const byDay = new Map(
@@ -71,7 +152,7 @@ const PatientDashboard = () => {
       byDay.set(today, {
         taken: completedToday,
         skipped: skippedToday,
-        total: todayAlerts.length,
+        total: todayDoseStatus.total,
       });
     }
 
@@ -82,7 +163,7 @@ const PatientDashboard = () => {
       const key = cursor.toISOString().slice(0, 10);
       const day = byDay.get(key);
 
-      if (!day || day.total === 0 || day.skipped > 0 || day.taken === 0) {
+      if (!day || day.total === 0 || day.skipped > 0 || day.taken !== day.total) {
         break;
       }
 
@@ -91,7 +172,7 @@ const PatientDashboard = () => {
     }
 
     return totalStreak;
-  }, [completedToday, skippedToday, today, todayAlerts.length, weeklyProgress]);
+  }, [completedToday, skippedToday, today, todayAlerts.length, todayDoseStatus.total, weeklyProgress]);
 
   const nextDose = useMemo(() => {
     const upcoming = todayAlerts

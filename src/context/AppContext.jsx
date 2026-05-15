@@ -8,6 +8,10 @@ function getId(item) {
   return item?.id || item?._id || '';
 }
 
+function normalizeDoseStatus(status) {
+  return String(status || '').toLowerCase();
+}
+
 function mapConversationParticipant(conversation) {
   return {
     id: getId(conversation.participant),
@@ -36,7 +40,7 @@ function mapDoseLogs(medications, timelines) {
     });
 
     timeline.alerts
-      .filter((alert) => alert.status === 'skipped')
+      .filter((alert) => normalizeDoseStatus(alert.status) === 'skipped')
       .forEach((alert) => {
         const medication = medicationMap.get(getId(alert.medication)) || timeline.medication;
         logs.push({

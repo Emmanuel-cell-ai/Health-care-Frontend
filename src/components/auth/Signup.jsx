@@ -18,7 +18,7 @@ const Signup = () => {
   const [licenseFile, setLicenseFile] = useState(null);
   const [reportFiles, setReportFiles] = useState([]);
   const [error, setError] = useState('');
-  const { signup, isLoading, authError, clearError } = useAuth();
+  const { signup, logout, isLoading, authError, clearError } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (event) => {
@@ -60,7 +60,17 @@ const Signup = () => {
         },
         userType,
       );
-      navigate(userType === 'patient' ? '/patient/dashboard' : '/doctor/dashboard');
+
+      if (userType === 'patient') {
+        logout();
+        navigate('/login', {
+          replace: true,
+          state: { message: 'Signup complete. Please log in to continue.' },
+        });
+        return;
+      }
+
+      navigate('/doctor/dashboard');
     } catch (submitError) {
       setError(submitError.message);
     }
